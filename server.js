@@ -87,7 +87,6 @@ var getFromApi = function(endpoint, args) {
            .end(function(response) {
                 if (response.ok) {
                     emitter.emit('end', response.body);
-                    //now get related artists by making request to a new endpoint
                 }
                 else {
                     emitter.emit('error', response.code);
@@ -111,18 +110,24 @@ app.get('/search/:name', function(req, res) {
         var artist = item.artists.items[0];
         //res.json(artist);
         //now get related artists by making request to a new endpoint
-        //I don't want to get related artists after I getFromApi(get related artists)
-        var related = getFromApi(artist.href+"/related-artists");
+        //I'm not adding a new listener because I want to have access to the artist variable
+        var relatedArtists = getFromApi(artist.href+"/related-artists");
         
-        related.on("end", function(items){
+        relatedArtists.on("end", function(items){
           artist.related = items.aritsts;
           console.log(artist.related);
           res.json(artist);
+          //now send out parallel requests to find top tracks from each related artist
+          onRelArtComplete(artist);
+          
+          
+          
+          
         });
         
-        related.on("error", function(){
+        relatedArtists.on("error", function(){
           console.log("error getting related artists");
-          console.log(artist.href+"/related-artists");
+          res.status(404).send("error");
         });
     });
 
@@ -130,8 +135,31 @@ app.get('/search/:name', function(req, res) {
         res.sendStatus(code);
     });
     
-
+    var onRelArtComplete = function(persons){
+    var counter = 0;
+  
+    var checkComplete = function(){
+      if(counter === persons.related.length){
+        res.json(persons); //when all related artists are done, send the complete artist object back to client
+      }
+    };
+  
+    persons[related].forEach(function(person){
+      var tracks = getFromApi(endpoint, args);  //need to read documentation to send correct endpoint and arguments 
+    
+      tracks.on("end", function(item){
+        person.tracks = item.tracks; //when each related artist is done, set artist.related[i].tracks=item.tracks
+        counter++;
+        checkComplete(); //check to see if we've exhausted the number of related artists
+      });
+    
+      tracks.on("error", function(code){
+        res.sendStatus(code); //deal with errors
+      });
+    });
+  }; 
 });
+
 
 
 
